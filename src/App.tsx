@@ -348,16 +348,17 @@ export default function App() {
   const cartTotal = useMemo(() => cart.reduce((total, item) => total + (item.price * item.quantity), 0), [cart]);
   const cartItemsCount = useMemo(() => cart.reduce((count, item) => count + item.quantity, 0), [cart]);
 
+  const visibleBooks = useMemo(() => books.filter(b => !b.isArchived), [books]);
+
   // Read filtered books
   const filteredBooks = useMemo(() => {
-    return books.filter(book => {
-      if (book.isArchived) return false;
+    return visibleBooks.filter(book => {
       const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             book.author.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'Barchasi' || book.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory, books]);
+  }, [searchQuery, selectedCategory, visibleBooks]);
 
   // --- ADMIN PANEL NEW STATES ---
   const [toasts, setToasts] = React.useState<{id: number, type: 'success'|'error'|'info', msg: string}[]>([]);
@@ -434,15 +435,26 @@ export default function App() {
            </div>
 
            <div className="relative z-10 w-full pb-8">
-             <div className="flex items-center gap-2 mb-4">
-                 <BookOpen className="text-[#FEC204]" size={28} />
-                 <span className="text-[#FEC204] font-bold tracking-widest text-lg">LIBRIS</span>
-             </div>
-             <div className="text-4xl font-bold tracking-tight text-white mb-4 leading-tight">
-               NODIR KITOBLAR<br /> DO'KONI
-             </div>
-             <p className="text-white/60 text-base mb-8 leading-relaxed font-medium">
-                Bilim xazinasi va noyob asarlar olamiga xush kelibsiz. Eksklyuziv nashrlarni biz bilan kashf eting.
+             <motion.div 
+               initial={{ opacity: 0, y: -20 }}
+               animate={{ opacity: 1, y: 0 }}
+               transition={{ duration: 0.8, ease: "easeOut" }}
+               className="text-[42px] font-black tracking-tight text-center text-white mb-6 leading-tight uppercase relative"
+             >
+                <motion.span
+                   animate={{ 
+                      textShadow: ["0px 0px 10px rgba(254, 194, 4, 0)", "0px 0px 30px rgba(254, 194, 4, 0.4)", "0px 0px 10px rgba(254, 194, 4, 0)"],
+                      y: [0, -5, 0]
+                   }}
+                   transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                   className="inline-block relative"
+                >
+                   NODIR KITOBLAR<br /> DO'KONI
+                </motion.span>
+             </motion.div>
+             <p className="text-white/60 text-base text-center mb-8 leading-relaxed font-medium">
+                Bilim — eng qimmatli boylik.<br />
+                Uni hech kim tortib ola olmaydi.
              </p>
              
              <div className="w-full bg-[#111111]/80 backdrop-blur-xl border border-white/5 rounded-[32px] p-6 shadow-2xl space-y-4">
@@ -541,27 +553,54 @@ export default function App() {
 
           {activeTab === 'home' && (
             <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="pb-10">
-              {/* HERO BANNER - 3D Parallax */}
-              <div className="relative w-full h-[320px] bg-[#111111] flex items-center justify-center overflow-hidden rounded-b-[48px] shadow-2xl">
-                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent"></div>
-                 {/* Typewriter Greeting */}
-                 <div className="absolute top-8 left-6 z-20">
-                    <motion.div initial={{width:0}} animate={{width:"100%"}} transition={{duration: 1.5, ease:"easeOut"}} className="overflow-hidden whitespace-nowrap border-r-2 border-[#FEC204] pr-1">
-                      <h1 className="text-3xl font-black text-white">Xush kelibsiz.</h1>
-                    </motion.div>
-                    <p className="text-[#FEC204] font-medium text-sm mt-1 animate-in fade-in slide-in-from-bottom-2 duration-1000 delay-500">Bugun nimani mutolaa qilamiz?</p>
-                 </div>
+              {/* HERO BANNER - Modern Glassmorphic */}
+              <div className="relative w-full pt-12 pb-8 px-6 bg-gradient-to-b from-[#151515] to-[#111111] overflow-hidden rounded-b-[40px] shadow-[0_10px_40px_rgba(0,0,0,0.5)] border-b border-white/5">
+                 {/* Decorative Blobs */}
+                 <div className="absolute top-0 right-0 w-64 h-64 bg-[#FEC204]/10 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3"></div>
+                 <div className="absolute bottom-0 left-0 w-48 h-48 bg-purple-500/10 rounded-full blur-[60px] translate-y-1/2 -translate-x-1/2"></div>
                  
-                 {/* 3D Book Area */}
-                 <motion.div 
-                    initial={{ rotateY: -20, rotateX: 10, y: 20 }}
-                    animate={{ rotateY: [ -15, 15, -15 ], rotateX: [5, 15, 5] }}
-                    transition={{ repeat: Infinity, duration: 8, ease: "easeInOut" }}
-                    className="relative z-10 w-40 h-56 mt-8 book-cover-3d shadow-2xl"
-                 >
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full animate-shimmer z-30 pointer-events-none"></div>
-                    <img src={books[0]?.coverUrl} className="w-full h-full object-cover rounded shadow-[-10px_10px_20px_rgba(0,0,0,0.8)]" />
-                 </motion.div>
+                 <div className="relative z-10 flex flex-col">
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
+                       <h1 className="text-[34px] font-black text-white leading-tight tracking-tight">
+                         Xush kelibsiz<span className="text-[#FEC204]">.</span>
+                       </h1>
+                       <p className="text-white/50 text-sm font-medium mt-1">
+                         Bugun nimani mutolaa qilamiz?
+                       </p>
+                    </motion.div>
+
+                    <motion.div 
+                       initial={{ opacity: 0, y: 20 }}
+                       animate={{ opacity: 1, y: 0 }}
+                       transition={{ delay: 0.2 }}
+                       className="relative w-full rounded-[24px] overflow-hidden group cursor-pointer border border-white/10 bg-black/20"
+                       onClick={() => setSelectedBook(visibleBooks[0])}
+                    >
+                       <div className="absolute inset-0">
+                          <img src={visibleBooks[0]?.coverUrl} className="w-full h-full object-cover opacity-50 scale-105 group-hover:scale-110 group-hover:opacity-40 transition-all duration-700 blur-[2px]" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/60 to-transparent"></div>
+                       </div>
+                       
+                       <div className="relative z-10 p-5 flex items-end gap-4">
+                          <div className="relative w-20 h-28 shrink-0 shadow-2xl rounded-lg overflow-hidden border border-white/20 transform group-hover:-translate-y-1 group-hover:rotate-2 transition-transform duration-300">
+                             <img src={visibleBooks[0]?.coverUrl} className="w-full h-full object-cover" />
+                             <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                          </div>
+                          <div className="flex-1 min-w-0 pb-1">
+                             <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-white/10 backdrop-blur-md rounded-md mb-2 border border-white/5">
+                                <Star size={10} className="fill-[#FEC204] text-[#FEC204]" /> 
+                                <span className="text-white text-[10px] font-bold leading-none">{visibleBooks[0]?.rating}</span>
+                             </div>
+                             <h3 className="font-bold text-white text-lg leading-tight mb-1 truncate">{visibleBooks[0]?.title}</h3>
+                             <p className="text-white/60 text-xs truncate">{visibleBooks[0]?.author}</p>
+                          </div>
+                          
+                          <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white shrink-0 group-hover:bg-[#FEC204] group-hover:text-black group-hover:scale-110 transition-all">
+                             <ChevronRight size={20} />
+                          </div>
+                       </div>
+                    </motion.div>
+                 </div>
               </div>
 
               {/* GORIZONTAL KO'RGAZMA */}
@@ -570,7 +609,7 @@ export default function App() {
                   <h2 className="text-xl font-bold text-white tracking-tight">Ommabop <span className="text-[#FEC204]">asarlar</span></h2>
                 </div>
                 <div className="flex overflow-x-auto hide-scroll gap-4 pb-6 -mx-6 px-6 snap-x snap-mandatory">
-                   {books.slice(0, 5).map((book, idx) => (
+                   {visibleBooks.slice(0, 5).map((book, idx) => (
                       <motion.div 
                         initial={{ opacity: 0, y: 30 }}
                         whileInView={{ opacity: 1, y: 0 }}
@@ -608,7 +647,7 @@ export default function App() {
               <div className="px-6 relative">
                  <h2 className="text-xl font-bold text-white tracking-tight mb-6 mt-4">Yangi <span className="text-[#FEC204]">kitoblar</span></h2>
                  <div className="grid grid-cols-2 gap-4">
-                    {books.slice(5, 11).map((book, idx) => (
+                    {visibleBooks.slice(5, 11).map((book, idx) => (
                        <motion.div 
                          initial={{ opacity: 0, scale: 0.9 }}
                          whileInView={{ opacity: 1, scale: 1 }}
@@ -844,34 +883,27 @@ export default function App() {
           {activeTab === 'profile' && (
              <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="pb-10 min-h-full">
                  {/* Top gradient area */}
-                 <div className="h-48 bg-gradient-to-b from-[#111111] to-[#0A0A0A] relative rounded-b-[48px] overflow-hidden flex flex-col items-center justify-center pt-8">
+                 <div className="pt-12 pb-16 bg-gradient-to-b from-[#111111] to-[#0A0A0A] relative rounded-b-[48px] overflow-hidden flex flex-col items-center justify-center shadow-xl">
                     <div className="absolute top-0 w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/5 via-transparent to-transparent"></div>
                     
                     {/* AVATAR with rotating ring and flip */}
-                    <div className="relative group perspective-1000 w-24 h-24 mb-3">
+                    <div className="relative group perspective-1000 w-24 h-24 mb-4 z-10 shrink-0">
                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }} className="absolute -inset-2 rounded-full border border-dashed border-[#FEC204]/50"></motion.div>
                        <div className="w-full h-full rounded-full bg-gradient-to-br from-[#111111] to-[#222222] border-2 border-white/10 shadow-2xl flex items-center justify-center relative overflow-hidden transform transition-transform duration-500 group-hover:scale-105 active:scale-95 cursor-pointer">
                           <span className="text-3xl font-black text-[#FEC204]">{userProfile?.fullName?.split(' ').map((n: string)=>n[0]).join('').substring(0,2).toUpperCase() || 'U'}</span>
                        </div>
                     </div>
-                    <h2 className="text-2xl font-black text-white relative z-10">{userProfile?.fullName || 'Foydalanuvchi'}</h2>
-                    <p className="text-[#FEC204] font-medium text-xs relative z-10">@{userProfile?.username || 'user'}</p>
+                    <h2 className="text-2xl font-black text-white relative z-10 text-center px-4 leading-tight">{userProfile?.fullName || 'Foydalanuvchi'}</h2>
+                    <p className="text-[#FEC204] font-medium text-xs relative z-10 mt-1">@{userProfile?.username || 'user'}</p>
                  </div>
 
-                 <div className="px-6 -mt-4 relative z-20 space-y-4">
+                 <div className="px-6 -mt-6 relative z-20 space-y-4">
                     {/* Stats Cards - CountUp animation */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                        <motion.div initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} transition={{delay:0.1}} className="bg-[#111111] border border-white/5 p-5 rounded-[24px] shadow-lg flex flex-col items-center text-center">
-                          <Package className="text-white/40 mb-2" size={24} />
-                          <div className="text-2xl font-black text-white mb-1"><AnimatedCounter from={0} to={orders.filter(o => o.userId === userProfile?.username).length} /></div>
+                          <Package className="text-[#FEC204] mb-2" size={24} />
+                          <div className="text-3xl font-black text-white mb-1"><AnimatedCounter from={0} to={orders.filter(o => o.userId === userProfile?.username).length} /></div>
                           <p className="text-[10px] text-white/50 uppercase tracking-wider font-bold">Buyurtmalar</p>
-                       </motion.div>
-                       <motion.div initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} transition={{delay:0.2}} className="bg-[#111111] border border-white/5 p-5 rounded-[24px] shadow-lg flex flex-col items-center text-center">
-                          <BarChart3 className="text-[#FEC204] mb-2" size={24} />
-                          <div className="text-xl font-black text-white mb-1 leading-[32px] break-all px-2 flex items-baseline">
-                             <AnimatedCounter from={0} to={orders.filter(o => o.userId === userProfile?.username).reduce((acc, o)=>acc+o.totalAmount, 0)} />
-                          </div>
-                          <p className="text-[10px] text-white/50 uppercase tracking-wider font-bold">Sarflangan sum</p>
                        </motion.div>
                     </div>
 
@@ -937,12 +969,23 @@ export default function App() {
                    style={{ transition: 'transform 0.1s ease-out', transformStyle: 'preserve-3d' }}
                 >
                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/10 to-transparent pointer-events-none"></div>
-                   <h1 className="text-2xl font-black text-white relative z-10" style={{ transform: 'translateZ(30px)' }}>
-                      Xush kelibsiz, <span className="text-[#FEC204]">Admin</span>
-                   </h1>
-                   <p className="text-white/50 text-sm font-medium mt-1 relative z-10" style={{ transform: 'translateZ(20px)' }}>
-                      {new Date().toLocaleDateString('uz-UZ', { day: 'numeric', month: 'long', year: 'numeric' })}
-                   </p>
+                   <div className="flex items-start justify-between relative z-10">
+                      <div>
+                         <h1 className="text-2xl font-black text-white" style={{ transform: 'translateZ(30px)' }}>
+                            Xush kelibsiz, <span className="text-[#FEC204]">Admin</span>
+                         </h1>
+                         <p className="text-white/50 text-sm font-medium mt-1" style={{ transform: 'translateZ(20px)' }}>
+                            {(() => {
+                               const d = new Date();
+                               const m = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr'];
+                               return `${d.getDate()}-${m[d.getMonth()]} ${d.getFullYear()} `;
+                            })()}
+                         </p>
+                      </div>
+                      <button onClick={handleLogout} className="w-10 h-10 rounded-full bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white flex items-center justify-center transition-colors active:scale-90" style={{ transform: 'translateZ(30px)' }}>
+                         <LogOut size={16} />
+                      </button>
+                   </div>
                 </motion.div>
 
                 {/* --- DASHBOARD TAB --- */}
@@ -1296,7 +1339,7 @@ export default function App() {
                      <div>
                         <h3 className="text-xs font-bold text-white/50 uppercase tracking-widest pl-1 mb-3">Top Kitoblar</h3>
                         <div className="space-y-3">
-                           {books.slice(0,3).map((b, i) => (
+                           {visibleBooks.slice(0,3).map((b, i) => (
                               <motion.div initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{delay: i*0.1}} key={b.id} className="bg-[#111111] border border-white/5 rounded-2xl p-3 flex items-center gap-3 relative overflow-hidden group">
                                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-xl font-black shrink-0 relative perspective-600">
                                     <motion.div whileHover={{rotateY:180}} transition={{duration:0.6}} style={{transformStyle:'preserve-3d'}} className="w-full h-full absolute flex items-center justify-center">
