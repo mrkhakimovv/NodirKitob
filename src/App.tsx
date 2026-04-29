@@ -12,6 +12,7 @@ import { motion, AnimatePresence, useSpring, useTransform, useMotionValue, useAn
 import { Home, Inbox, Search, ShoppingBag, User, ChevronLeft, ChevronRight, Minus, Plus, Star, BookOpen, Clock, Trash2, Heart, LogOut, Package, Edit3, PlusCircle, BarChart3, Archive, ShoppingCart, LogIn, Key, HelpCircle, CheckCircle2, Navigation2 } from 'lucide-react';
 import { books as initialBooks, categories } from './data';
 import { sendToTelegram } from './lib/telegram';
+import { supabase } from './lib/supabase';
 import { Book, CartItem, Order } from './types';
 
 
@@ -30,19 +31,18 @@ const AnimatedCounter = ({ from, to, duration = 1.5 }: { from: number, to: numbe
     const step = (timestamp: number) => {
       if (!startTimestamp) startTimestamp = timestamp;
       const progress = Math.min((timestamp - startTimestamp) / (duration * 1000), 1);
-      // easeOutExpo
       const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
       setValue(Math.floor(easeProgress * (to - from) + from));
       if (progress < 1) {
          reqId = window.requestAnimationFrame(step);
       }
     };
-    reqId = window.requestAnimationFrame(step);return (
-) => window.cancelAnimationFrame(reqId);
+    reqId = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(reqId);
   }, [from, to, duration]);
 
   return <span>{value}</span>;
-};
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'search' | 'cart' | 'profile' | 'admin'>('home');
@@ -53,23 +53,19 @@ export default function App() {
   const [isCheckout, setIsCheckout] = useState(false);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 
-  // App Data State
   const [books, setBooks] = useState<Book[]>(initialBooks);
   const [orders, setOrders] = useState<Order[]>([]);
   
-  // Checkout Form State
   const [checkoutName, setCheckoutName] = useState('');
   const [checkoutPhone, setCheckoutPhone] = useState('');
   const [checkoutAddress, setCheckoutAddress] = useState('');
   const [checkoutPaymentType, setCheckoutPaymentType] = useState('Naqd');
 
-  // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userProfile, setUserProfile] = useState<{ fullName: string; username: string; phone: string } | null>(null);
   const [showAuthMode, setShowAuthMode] = useState<'main' | 'login' | 'register' | 'admin'>('main');
   
-  // Auth Form State
   const [authFullName, setAuthFullName] = useState('');
   const [authUsername, setAuthUsername] = useState('');
   const [authPhone, setAuthPhone] = useState('');
@@ -78,14 +74,11 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   
-  // Admin Panel State
   const [adminTab, setAdminTab] = useState<'dashboard' | 'orders' | 'books' | 'add' | 'report' | 'archive'>('dashboard');
   const [editingBookId, setEditingBookId] = useState<string | null>(null);
   
-  // App view State
   const [viewMyOrders, setViewMyOrders] = useState(false);
   
-  // Book Form State (Add / Edit)
   const [bfTitle, setBfTitle] = useState('');
   const [bfAuthor, setBfAuthor] = useState('');
   const [bfPrice, setBfPrice] = useState('');
@@ -97,9 +90,8 @@ export default function App() {
   const [bfError, setBfError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   
-  // Initialization
   useEffect(() => {
-    const checkUser = () => {
+    const fetchAll = async () => {
       const authUser = localStorage.getItem('authUser');
       if (authUser) {
          try {
@@ -112,29 +104,36 @@ export default function App() {
            setIsAuthenticated(true);
          } catch(e) {}
       }
-    };
 
-    const fetchBooks = () => {
-      const storedBooks = localStorage.getItem('books');
-      if (storedBooks) {
-        try {
-          setBooks(JSON.parse(storedBooks));
-        } catch(e) {}
+      try {
+        const { data, error } = await supabase.from('books').select('*');
+        if (data && data.length > 0) {
+          setBooks(data);
+          localStorage.setItem('books', JSON.stringify(data));
+        } else {
+          const stored = localStorage.getItem('books');
+          if (stored) setBooks(JSON.parse(stored));
+        }
+      } catch (e) {
+          const stored = localStorage.getItem('books');
+          if (stored) setBooks(JSON.parse(stored));
+      }
+
+      try {
+        const { data, error } = await supabase.from('orders').select('*');
+        if (data && data.length > 0) {
+          setOrders(data);
+          localStorage.setItem('orders', JSON.stringify(data));
+        } else {
+          const stored = localStorage.getItem('orders');
+          if (stored) setOrders(JSON.parse(stored));
+        }
+      } catch (e) {
+          const stored = localStorage.getItem('orders');
+          if (stored) setOrders(JSON.parse(stored));
       }
     };
-
-    const fetchOrders = () => {
-      const storedOrders = localStorage.getItem('orders');
-      if (storedOrders) {
-        try {
-          setOrders(JSON.parse(storedOrders));
-        } catch(e) {}
-      }
-    };
-
-    checkUser();
-    fetchBooks();
-    fetchOrders();
+    fetchAll();
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -160,48 +159,22 @@ export default function App() {
      }
 
      try {
-       const usersInfo = localStorage.getItem('users');
-       const users = usersInfo ? JSON.parse(usersInfo) : [];
-       const user = users.find((u: any) => u.username === authUsername && u.password === authPassword);
-       
-       if (user) {
-         setUserProfile(user);
-         setIsAuthenticated(true);
-         localStorage.setItem('authUser', JSON.stringify(user));
-       } else {
-         setAuthError("Login yoki parol noto'g'ri.");
+       try {
+         const { data: existingUser } = await supabase.from('users').select('*').eq('username', authUsername).single();
+         if (existingUser) throw new Error("Bu username band. Boshqa tanlang.");
+       } catch (e: any) {
+         if (e.code !== 'PGRST116') if (e.message) throw e; // Ignore not found error
        }
-     } catch (err: any) {
-       setAuthError("Tizimda xatolik yuz berdi.");
-     } finally {
-       setAuthLoading(false);
-     }
-  };
 
-  const handleRegister = async (e: React.FormEvent) => {
-     e.preventDefault();
-     setAuthLoading(true); setAuthError('');
-     try {
-       if (!authUsername || !authPassword || !authFullName || !authPhone) {
-          throw new Error("Barcha maydonlarni to'ldiring.");
-       }
-       if (authUsername.includes(' ')) throw new Error("Username da probel bo'lmasligi kerak.");
+       const newUser = { username: authUsername, phone: authPhone, password: authPassword, full_name: authFullName };
+       await supabase.from('users').insert([newUser]);
        
-       const usersInfo = localStorage.getItem('users');
-       const users = usersInfo ? JSON.parse(usersInfo) : [];
-       
-       if (users.find((u: any) => u.username === authUsername)) {
-          throw new Error("Bu username band. Boshqa tanlang.");
-       }
-       
-       const newUser = { fullName: authFullName, username: authUsername, phone: authPhone, password: authPassword };
-       users.push(newUser);
-       localStorage.setItem('users', JSON.stringify(users));
-       localStorage.setItem('authUser', JSON.stringify(newUser));
-       setUserProfile(newUser);
+       const profileUser = { fullName: authFullName, username: authUsername, phone: authPhone };
+       localStorage.setItem('authUser', JSON.stringify(profileUser));
+       setUserProfile(profileUser);
        setIsAuthenticated(true);
        
-       // Send notification to telegram about new user
+       // Send notification to telegram
        await sendToTelegram(`YANGI FOYDALANUVCHI 👥\n\nIsm: ${authFullName}\nUsername: @${authUsername}\nTelefon: ${authPhone}`);
 
      } catch (err: any) {
@@ -223,14 +196,20 @@ export default function App() {
   };
 
   // Generic Methods
-  const saveBooks = (newBooks: Book[]) => {
+  const saveBooks = async (newBooks: Book[]) => {
      setBooks(newBooks);
      localStorage.setItem('books', JSON.stringify(newBooks));
+     try {
+       await supabase.from('books').upsert(newBooks);
+     } catch (e) { console.error('Supabase Error:', e); }
   };
   
-  const saveOrders = (newOrders: Order[]) => {
+  const saveOrders = async (newOrders: Order[]) => {
      setOrders(newOrders);
      localStorage.setItem('orders', JSON.stringify(newOrders));
+     try {
+       await supabase.from('orders').upsert(newOrders);
+     } catch (e) { console.error('Supabase Error:', e); }
   };
 
   const handleAddOrEditBook = async () => {
