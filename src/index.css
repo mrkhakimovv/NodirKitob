@@ -1,12 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --color-gold: #FEC204;
+  --color-black: #0A0A0A;
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #F3F4F6;
+  background-color: var(--color-black);
+  color: #FFFFFF;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -19,3 +23,105 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@keyframes jello {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.4); }
+  70% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-jello {
+  animation: jello 0.5s ease-in-out;
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
+}
+
+/* 3D Book Cover styling */
+.book-cover-3d {
+  transform-style: preserve-3d;
+  position: relative;
+}
+
+.book-cover-3d::before {
+  content: "";
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  left: -8px;
+  width: 8px;
+  background: #d4c4a8; /* Pages color */
+  transform: rotateY(-90deg);
+  transform-origin: right;
+  border-radius: 4px 0 0 4px;
+}
+
+.book-cover-3d::after {
+  content: "";
+  position: absolute;
+  top: 1%;
+  bottom: 1%;
+  right: -8px;
+  width: 8px;
+  background: #d4c4a8; /* Pages color */
+  transform: rotateY(90deg);
+  transform-origin: left;
+  border-radius: 0 4px 4px 0;
+}
+
+/* 3D flipping card */
+.flip-card {
+  perspective: 1000px;
+}
+.flip-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+}
+.flip-card:hover .flip-card-inner {
+  transform: rotateY(180deg);
+}
+.flip-card-front, .flip-card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  border-radius: 24px;
+}
+.flip-card-back {
+  transform: rotateY(180deg);
+}
+
+/* Base custom classes for elements */
+.input-field {
+  @apply w-full h-14 bg-white/5 rounded-2xl px-4 border border-white/10 outline-none font-medium text-white placeholder-white/40 transition-colors focus:border-gold focus:bg-white/10;
+}
+
+.btn-primary {
+  @apply w-full h-14 bg-gold text-black rounded-[16px] font-bold text-lg flex items-center justify-center active:scale-95 transition-all shadow-lg;
+}
+
+.btn-secondary {
+  @apply w-full h-14 bg-white/10 text-white rounded-[16px] font-bold text-lg flex items-center justify-center active:scale-95 transition-all;
+}
+
+.text-gold {
+  color: var(--color-gold);
+}
+.bg-gold {
+  background-color: var(--color-gold);
+}
+.border-gold {
+  border-color: var(--color-gold);
+}
+
