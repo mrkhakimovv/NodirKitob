@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "Message": {
+      "title": "Message",
+      "description": "User to Admin Chat Message",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "isAdmin": { "type": "boolean" },
+        "text": { "type": "string" },
+        "is_read": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["userId", "isAdmin", "text", "is_read", "created_at"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User Profile",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "phone": { "type": "string" },
+        "full_name": { "type": "string" }
+      },
+      "required": ["username", "password", "phone", "full_name"]
+    }
+  },
+  "firestore": {
+    "messages/{messageId}": {
+      "schema": { "$ref": "Message" },
+      "description": "Store all messages."
+    },
+    "users/{username}": {
+      "schema": { "$ref": "User" },
+      "description": "Store all users."
+    }
+  }
+}

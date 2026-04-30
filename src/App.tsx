@@ -13,7 +13,9 @@ import { Home, Inbox, Search, ShoppingBag, User, ChevronLeft, ChevronRight, Minu
 import { books as initialBooks, categories } from './data';
 import { sendToTelegram } from './lib/telegram';
 import { supabase } from './lib/supabase';
-import { Book, CartItem, Order } from './types';
+import { db } from './lib/firebase';
+import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc, where, getDocs, writeBatch, setDoc, getDoc } from 'firebase/firestore';
+import { Book, CartItem, Order, Message } from './types';
 
 
 
@@ -147,25 +149,18 @@ export default function App() {
     };
     fetchAll();
 
-    const fetchMessages = async () => {
-       const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
-       if (data) setMessages(data as Message[]);
-    };
-    fetchMessages();
-    const sub = supabase
-        .channel('messages_channel')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
-           fetchMessages();
-        })
-        .subscribe();
-        
-    const interval = setInterval(() => {
-        fetchMessages();
-    }, 5000);
+    const messagesRef = collection(db, 'messages');
+    const q = query(messagesRef, orderBy('created_at', 'asc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const msgs: Message[] = [];
+        snapshot.forEach((doc) => {
+           msgs.push({ id: doc.id, ...doc.data() } as Message);
+        });
+        setMessages(msgs);
+    });
 
     return () => {
-        supabase.removeChannel(sub);
-        clearInterval(interval);
+        unsubscribe();
     };
   }, []);
 
@@ -192,8 +187,9 @@ export default function App() {
      }
 
      try {
-       const { data: user, error } = await supabase.from('users').select('*').eq('username', authUsername).eq('password', authPassword).single();
-       if (user) {
+       const userDoc = await getDoc(doc(db, 'users', authUsername));
+       if (userDoc.exists() && userDoc.data().password === authPassword) {
+         const user = userDoc.data();
          const profileUser = { fullName: user.full_name, username: user.username, phone: user.phone };
          setUserProfile(profileUser);
          setIsAuthenticated(true);
@@ -202,11 +198,7 @@ export default function App() {
          setAuthError("Login yoki parol noto'g'ri.");
        }
      } catch (err: any) {
-       if (err.code === 'PGRST116') {
-         setAuthError("Login yoki parol noto'g'ri.");
-       } else {
-         setAuthError(err.message || 'Tizimda xatolik yuz berdi.');
-       }
+       setAuthError(err.message || 'Tizimda xatolik yuz berdi.');
      } finally {
        setAuthLoading(false);
      }
@@ -222,15 +214,13 @@ export default function App() {
        }
        if (authUsername.includes(' ')) throw new Error("Username da probel bo'lmasligi kerak.");
        
-       try {
-         const { data: existingUser } = await supabase.from('users').select('*').eq('username', authUsername).single();
-         if (existingUser) throw new Error("Bu username band. Boshqa tanlang.");
-       } catch (e: any) {
-         if (e.code !== 'PGRST116') throw e; // Ignore not found error
+       const userDoc = await getDoc(doc(db, 'users', authUsername));
+       if (userDoc.exists()) {
+           throw new Error("Bu username band. Boshqa tanlang.");
        }
 
        const newUser = { username: authUsername, phone: authPhone, password: authPassword, full_name: authFullName };
-       await supabase.from('users').insert([newUser]);
+       await setDoc(doc(db, 'users', authUsername), newUser);
        
        const profileUser = { fullName: authFullName, username: authUsername, phone: authPhone };
        localStorage.setItem('authUser', JSON.stringify(profileUser));
@@ -281,14 +271,12 @@ export default function App() {
         userId: isAdmin ? (selectedChatUser || '@admin') : (userProfile?.username || 'user'),
         isAdmin: isAdmin,
         text: chatInput.trim(),
-        is_read: false
+        is_read: false,
+        created_at: new Date().toISOString()
      };
      setChatInput('');
      try {
-        const { data, error } = await supabase.from('messages').insert([newMsg]).select();
-        if (data && data.length > 0) {
-           setMessages(prev => [...prev, data[0] as Message]);
-        }
+        await addDoc(collection(db, 'messages'), newMsg);
      } catch (e) { console.error("Error sending message", e); }
   };
 
@@ -296,7 +284,15 @@ export default function App() {
      if (isAdmin && selectedChatUser) {
          const markRead = async () => {
              try {
-                await supabase.from('messages').update({ is_read: true }).eq('userId', selectedChatUser).eq('isAdmin', false).eq('is_read', false);
+                const q = query(collection(db, 'messages'), where('userId', '==', selectedChatUser), where('isAdmin', '==', false), where('is_read', '==', false));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                  const batch = writeBatch(db);
+                  snapshot.forEach((msgDoc) => {
+                     batch.update(msgDoc.ref, { is_read: true });
+                  });
+                  await batch.commit();
+                }
              } catch (e) { console.error("Error updating read status", e); }
          };
          markRead();
@@ -307,7 +303,15 @@ export default function App() {
      if (!isAdmin && activeTab === 'chat' && userProfile?.username) {
          const markRead = async () => {
              try {
-                await supabase.from('messages').update({ is_read: true }).eq('userId', userProfile.username).eq('isAdmin', true).eq('is_read', false);
+                const q = query(collection(db, 'messages'), where('userId', '==', userProfile.username), where('isAdmin', '==', true), where('is_read', '==', false));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                  const batch = writeBatch(db);
+                  snapshot.forEach((msgDoc) => {
+                     batch.update(msgDoc.ref, { is_read: true });
+                  });
+                  await batch.commit();
+                }
              } catch (e) { console.error("Error updating read status", e); }
          };
          markRead();
@@ -485,6 +489,22 @@ export default function App() {
            onConfirm: () => {
               archiveBookToggle(id);
               showToast(isArchiving ? "Arxivlandi" : "Qaytarildi", 'info');
+              setConfirmModal({ isOpen: false, config: null });
+           }
+        }
+     });
+  };
+
+  const attemptDeleteBook = (id: string) => {
+     setConfirmModal({
+        isOpen: true,
+        config: {
+           title: "Kitobni butunlay o'chirib yuborasizmi?",
+           isDanger: true,
+           onConfirm: () => {
+              const newBooks = books.filter(b => b.id !== id);
+              saveBooks(newBooks);
+              showToast("Kitob o'chirildi", 'success');
               setConfirmModal({ isOpen: false, config: null });
            }
         }
@@ -1121,11 +1141,21 @@ export default function App() {
                 {adminTab === 'dashboard' && (
                   <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="space-y-6">
                      <button onClick={() => setAdminTab('chats')} className="w-full bg-[#FEC204] text-[#0A0A0A] p-4 rounded-3xl flex items-center justify-between group transition-transform active:scale-95 shadow-[0_0_20px_rgba(254,194,4,0.2)]">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 relative">
                            <MessageCircle size={20} />
+                           {messages.filter(m => !m.isAdmin && !m.is_read).length > 0 && (
+                              <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#FEC204] animate-pulse"></div>
+                           )}
                            <span className="font-bold text-sm tracking-wide">Foydalanuvchilar bilan suhbat</span>
                         </div>
-                        <ChevronRight size={16} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                        <div className="flex items-center gap-2">
+                           {messages.filter(m => !m.isAdmin && !m.is_read).length > 0 && (
+                              <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                                 {messages.filter(m => !m.isAdmin && !m.is_read).length} ta yangi
+                              </span>
+                           )}
+                           <ChevronRight size={16} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                        </div>
                      </button>
 
                      <div className="grid grid-cols-2 gap-4">
@@ -1336,6 +1366,11 @@ export default function App() {
                                           <button onClick={()=>attemptArchiveBook(b.id, !b.isArchived)} className={`w-8 h-8 rounded-full flex items-center justify-center text-white active:scale-90 transition-colors ${b.isArchived ? 'bg-green-500/50 hover:bg-green-500' : 'bg-red-500/50 hover:bg-red-500'}`}>
                                              {b.isArchived ? <Inbox size={14} /> : <Archive size={14}/>}
                                           </button>
+                                          {b.isArchived && (
+                                             <button onClick={()=>attemptDeleteBook(b.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-white active:scale-90 transition-colors bg-red-500/50 hover:bg-red-500">
+                                                <Trash2 size={14}/>
+                                             </button>
+                                          )}
                                        </div>
                                     </div>
                                     <div className={`flex-1 ${booksViewMode === 'grid' ? '' : 'min-w-0'}`}>
@@ -1344,9 +1379,16 @@ export default function App() {
                                        <div className="text-[#FEC204] font-black text-xs">{formatPrice(b.price)}</div>
                                     </div>
                                     {booksViewMode === 'list' && (
-                                       <button onClick={()=>attemptArchiveBook(b.id, !b.isArchived)} className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0 ${b.isArchived ? 'bg-[#FEC204]/10 text-[#FEC204]' : 'bg-red-500/10 text-red-400'}`}>
-                                          {b.isArchived ? <Inbox size={14} /> : <Archive size={14}/>}
-                                       </button>
+                                       <div className="flex items-center gap-1 shrink-0">
+                                          <button onClick={()=>attemptArchiveBook(b.id, !b.isArchived)} className={`w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform ${b.isArchived ? 'bg-[#FEC204]/10 text-[#FEC204]' : 'bg-red-500/10 text-red-400'}`}>
+                                             {b.isArchived ? <Inbox size={14} /> : <Archive size={14}/>}
+                                          </button>
+                                          {b.isArchived && (
+                                             <button onClick={()=>attemptDeleteBook(b.id)} className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white">
+                                                <Trash2 size={14} />
+                                             </button>
+                                          )}
+                                       </div>
                                     )}
                                  </motion.div>
                            ))}
@@ -1508,20 +1550,33 @@ export default function App() {
                               <h2 className="text-xl font-black text-white">Suhbatlar</h2>
                            </div>
                            <div className="space-y-3">
-                              {Array.from(new Set(messages.map(m => m.userId))).filter(u => u !== '@admin').map((user, idx) => (
+                              {Array.from<string>(new Set(messages.map(m => m.userId))).filter(u => u !== '@admin').map((user, idx) => {
+                                 const unreadCount = messages.filter(m => m.userId === user && !m.isAdmin && !m.is_read).length;
+                                 return (
                                  <button key={idx} onClick={() => setSelectedChatUser(user)} className="w-full bg-[#111111] p-4 rounded-3xl border border-white/5 flex items-center justify-between group hover:border-[#FEC204]/30 transition-all text-left">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center font-black text-[#FEC204] text-lg uppercase">
+                                        <div className="relative w-12 h-12 rounded-full bg-white/5 flex items-center justify-center font-black text-[#FEC204] text-lg uppercase">
                                             {user.charAt(0)}
+                                            {unreadCount > 0 && (
+                                               <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-[#111111] animate-pulse"></div>
+                                            )}
                                         </div>
                                         <div>
                                             <div className="font-bold text-white text-base">@{user}</div>
                                             <div className="text-xs text-white/40 mt-0.5">Xabarlarni ko'rish</div>
                                         </div>
                                     </div>
-                                    <ChevronRight size={20} className="text-white/20 group-hover:text-[#FEC204] group-hover:translate-x-1 transition-all" />
+                                    <div className="flex items-center gap-2">
+                                       {unreadCount > 0 && (
+                                          <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                                             {unreadCount}
+                                          </span>
+                                       )}
+                                       <ChevronRight size={20} className="text-white/20 group-hover:text-[#FEC204] group-hover:translate-x-1 transition-all" />
+                                    </div>
                                  </button>
-                              ))}
+                                 );
+                              })}
                               {Array.from(new Set(messages.map(m => m.userId))).filter(u => u !== '@admin').length === 0 && (
                                  <div className="text-center text-white/40 py-10">Suhbatlar yo'q</div>
                               )}
