@@ -9,7 +9,7 @@ import { motion, AnimatePresence, useSpring, useTransform, useMotionValue, useAn
 
 
 
-import { Home, Inbox, Search, ShoppingBag, User, ChevronLeft, ChevronRight, Minus, Plus, Star, BookOpen, Clock, Trash2, Heart, LogOut, Package, Edit3, PlusCircle, BarChart3, Archive, ShoppingCart, LogIn, Key, HelpCircle, CheckCircle2, Navigation2 } from 'lucide-react';
+import { Home, Inbox, Search, ShoppingBag, User, ChevronLeft, ChevronRight, Minus, Plus, Star, BookOpen, Clock, Trash2, Heart, LogOut, Package, Edit3, PlusCircle, BarChart3, Archive, ShoppingCart, LogIn, Key, HelpCircle, CheckCircle2, Navigation2, MessageCircle, Check, CheckCheck } from 'lucide-react';
 import { books as initialBooks, categories } from './data';
 import { sendToTelegram } from './lib/telegram';
 import { supabase } from './lib/supabase';
@@ -45,7 +45,9 @@ const AnimatedCounter = ({ from, to, duration = 1.5 }: { from: number, to: numbe
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'cart' | 'profile' | 'admin'>('home');
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'cart' | 'profile' | 'chat' | 'admin'>('home');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,9 +76,19 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'orders' | 'books' | 'add' | 'report' | 'archive'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'orders' | 'books' | 'add' | 'report' | 'archive' | 'chats'>('dashboard');
   const [editingBookId, setEditingBookId] = useState<string | null>(null);
   
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [selectedChatUser, setSelectedChatUser] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages, activeTab, adminTab, selectedChatUser]);
+
   const [viewMyOrders, setViewMyOrders] = useState(false);
   
   const [bfTitle, setBfTitle] = useState('');
@@ -134,6 +146,27 @@ export default function App() {
       }
     };
     fetchAll();
+
+    const fetchMessages = async () => {
+       const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
+       if (data) setMessages(data as Message[]);
+    };
+    fetchMessages();
+    const sub = supabase
+        .channel('messages_channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+           fetchMessages();
+        })
+        .subscribe();
+        
+    const interval = setInterval(() => {
+        fetchMessages();
+    }, 5000);
+
+    return () => {
+        supabase.removeChannel(sub);
+        clearInterval(interval);
+    };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -159,11 +192,41 @@ export default function App() {
      }
 
      try {
+       const { data: user, error } = await supabase.from('users').select('*').eq('username', authUsername).eq('password', authPassword).single();
+       if (user) {
+         const profileUser = { fullName: user.full_name, username: user.username, phone: user.phone };
+         setUserProfile(profileUser);
+         setIsAuthenticated(true);
+         localStorage.setItem('authUser', JSON.stringify(profileUser));
+       } else {
+         setAuthError("Login yoki parol noto'g'ri.");
+       }
+     } catch (err: any) {
+       if (err.code === 'PGRST116') {
+         setAuthError("Login yoki parol noto'g'ri.");
+       } else {
+         setAuthError(err.message || 'Tizimda xatolik yuz berdi.');
+       }
+     } finally {
+       setAuthLoading(false);
+     }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setAuthLoading(true); setAuthError('');
+
+     try {
+       if (!authUsername || !authPassword || !authFullName || !authPhone) {
+          throw new Error("Barcha maydonlarni to'ldiring.");
+       }
+       if (authUsername.includes(' ')) throw new Error("Username da probel bo'lmasligi kerak.");
+       
        try {
          const { data: existingUser } = await supabase.from('users').select('*').eq('username', authUsername).single();
          if (existingUser) throw new Error("Bu username band. Boshqa tanlang.");
        } catch (e: any) {
-         if (e.code !== 'PGRST116') if (e.message) throw e; // Ignore not found error
+         if (e.code !== 'PGRST116') throw e; // Ignore not found error
        }
 
        const newUser = { username: authUsername, phone: authPhone, password: authPassword, full_name: authFullName };
@@ -211,6 +274,45 @@ export default function App() {
        await supabase.from('orders').upsert(newOrders);
      } catch (e) { console.error('Supabase Error:', e); }
   };
+
+  const handleSendMessage = async () => {
+     if (!chatInput.trim()) return;
+     const newMsg = {
+        userId: isAdmin ? (selectedChatUser || '@admin') : (userProfile?.username || 'user'),
+        isAdmin: isAdmin,
+        text: chatInput.trim(),
+        is_read: false
+     };
+     setChatInput('');
+     try {
+        const { data, error } = await supabase.from('messages').insert([newMsg]).select();
+        if (data && data.length > 0) {
+           setMessages(prev => [...prev, data[0] as Message]);
+        }
+     } catch (e) { console.error("Error sending message", e); }
+  };
+
+  useEffect(() => {
+     if (isAdmin && selectedChatUser) {
+         const markRead = async () => {
+             try {
+                await supabase.from('messages').update({ is_read: true }).eq('userId', selectedChatUser).eq('isAdmin', false).eq('is_read', false);
+             } catch (e) { console.error("Error updating read status", e); }
+         };
+         markRead();
+     }
+  }, [messages, isAdmin, selectedChatUser]);
+
+  useEffect(() => {
+     if (!isAdmin && activeTab === 'chat' && userProfile?.username) {
+         const markRead = async () => {
+             try {
+                await supabase.from('messages').update({ is_read: true }).eq('userId', userProfile.username).eq('isAdmin', true).eq('is_read', false);
+             } catch (e) { console.error("Error updating read status", e); }
+         };
+         markRead();
+     }
+  }, [messages, isAdmin, activeTab, userProfile]);
 
   const handleAddOrEditBook = async () => {
      setIsSaving(true);
@@ -877,14 +979,19 @@ export default function App() {
                  </div>
 
                  <div className="px-6 -mt-6 relative z-20 space-y-4">
-                    {/* Stats Cards - CountUp animation */}
-                    <div className="grid grid-cols-1 gap-4">
-                       <motion.div initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} transition={{delay:0.1}} className="bg-[#111111] border border-white/5 p-5 rounded-[24px] shadow-lg flex flex-col items-center text-center">
-                          <Package className="text-[#FEC204] mb-2" size={24} />
-                          <div className="text-3xl font-black text-white mb-1"><AnimatedCounter from={0} to={orders.filter(o => o.userId === userProfile?.username).length} /></div>
-                          <p className="text-[10px] text-white/50 uppercase tracking-wider font-bold">Buyurtmalar</p>
-                       </motion.div>
-                    </div>
+                    {/* Support Button (Replaced Stats) */}
+                    <motion.button onClick={() => setActiveTab('chat')} initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} transition={{delay:0.1}} className="w-full bg-[#111111] border border-white/5 p-5 rounded-[24px] shadow-lg flex items-center justify-between group active:scale-95 transition-all hover:border-[#FEC204]/50">
+                       <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-full bg-[#FEC204]/10 flex items-center justify-center text-[#FEC204]">
+                             <MessageCircle size={24} />
+                          </div>
+                          <div className="text-left">
+                             <div className="font-black text-white text-lg leading-tight">Qo'llab-quvvatlash</div>
+                             <div className="text-[10px] text-white/50 uppercase tracking-wider font-bold mt-1">Xizmat ko'rsatish markazi</div>
+                          </div>
+                       </div>
+                       <ChevronRight size={20} className="text-white/20 group-hover:text-[#FEC204] group-hover:translate-x-1 transition-all" />
+                    </motion.button>
 
                     <div className="h-px bg-white/5 my-4"></div>
 
@@ -923,14 +1030,57 @@ export default function App() {
                        )}
                     </motion.div>
 
-                    <button onClick={handleLogout} className="w-full mt-6 bg-[#111111] border border-red-500/20 text-red-400 h-14 rounded-2xl font-bold flex items-center justify-center active:scale-95 transition-all">
+                    <button onClick={handleLogout} className="w-full mt-4 bg-[#111111] border border-red-500/20 text-red-400 h-14 rounded-2xl font-bold flex items-center justify-center active:scale-95 transition-all">
                        <LogOut size={20} className="mr-2" /> Tizimdan chiqish
                     </button>
                  </div>
              </motion.div>
           )}
 
-          
+          {activeTab === 'chat' && (
+             <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="pb-36 pt-8 px-6 min-h-full flex flex-col">
+                <div className="sticky top-0 bg-[#0A0A0A]/90 backdrop-blur-md z-20 pb-4 mb-4 border-b border-white/5 flex justify-between items-center">
+                    <h1 className="text-3xl font-black text-white tracking-tight">Qo'llab <span className="text-[#FEC204]">quvvatlash</span></h1>
+                </div>
+                <div ref={chatContainerRef} className="flex-1 overflow-y-auto flex flex-col gap-4 mb-6 hide-scroll">
+                   {messages.filter(m => m.userId === userProfile?.username).map((msg, i) => (
+                      <div key={i} className={`max-w-[80%] p-4 rounded-2xl ${msg.isAdmin ? 'bg-[#1A1A1A] text-white self-start rounded-tl-none border border-white/5 shadow-lg' : 'bg-[#FEC204] text-[#0A0A0A] self-end rounded-tr-none shadow-lg'}`}>
+                          <p className="font-medium text-[15px] leading-relaxed">{msg.text}</p>
+                          <div className={`text-[11px] mt-2 flex items-center gap-1 ${msg.isAdmin ? 'justify-start text-white/40' : 'justify-end text-[#0A0A0A]/70'}`}>
+                             {msg.isAdmin ? (
+                                <>
+                                   <span>{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                </>
+                             ) : (
+                                <>
+                                   <span>{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                   <div className="flex items-center ml-1">
+                                      {msg.is_read ? (
+                                         <><CheckCheck size={14} className="text-[#0A0A0A]/70"/> <span className="ml-0.5 font-semibold">Ko'rildi</span></>
+                                      ) : (
+                                         <><Check size={14} className="text-[#0A0A0A]/50"/> <span className="ml-0.5 font-semibold">Yuborildi</span></>
+                                      )}
+                                   </div>
+                                </>
+                             )}
+                          </div>
+                      </div>
+                   ))}
+                   {messages.filter(m => m.userId === userProfile?.username).length === 0 && (
+                      <div className="text-center text-white/40 my-auto">
+                         Xabarlar yo'q
+                      </div>
+                   )}
+                </div>
+                <div className="flex items-center gap-2 mt-auto fixed bottom-24 left-6 right-6 z-20">
+                   <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} placeholder="Xabar yozish..." className="flex-1 bg-[#111111] border border-white/10 rounded-2xl px-4 py-4 text-white focus:border-[#FEC204] focus:ring-1 focus:ring-[#FEC204]/50 outline-none transition-all shadow-xl" />
+                   <button onClick={handleSendMessage} className="w-14 h-14 bg-[#FEC204] text-[#0A0A0A] rounded-2xl flex items-center justify-center hover:scale-105 transition-transform shadow-xl">
+                      <Navigation2 size={24} className="rotate-90 ml-1" />
+                   </button>
+                </div>
+             </motion.div>
+          )}
+
           {activeTab === 'admin' && isAdmin && (
              <div className="pb-24 flex-1 overflow-y-auto hide-scroll px-4 relative min-h-full">
                 {/* 3D Header - Mouse Tilt */}
@@ -970,6 +1120,14 @@ export default function App() {
                 {/* --- DASHBOARD TAB --- */}
                 {adminTab === 'dashboard' && (
                   <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="space-y-6">
+                     <button onClick={() => setAdminTab('chats')} className="w-full bg-[#FEC204] text-[#0A0A0A] p-4 rounded-3xl flex items-center justify-between group transition-transform active:scale-95 shadow-[0_0_20px_rgba(254,194,4,0.2)]">
+                        <div className="flex items-center gap-3">
+                           <MessageCircle size={20} />
+                           <span className="font-bold text-sm tracking-wide">Foydalanuvchilar bilan suhbat</span>
+                        </div>
+                        <ChevronRight size={16} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                     </button>
+
                      <div className="grid grid-cols-2 gap-4">
                         {[
                           { val: orders.reduce((acc,o)=>acc+o.totalAmount,0), label: 'Jami savdo', icon: BarChart3, prefix: '', suffix: '', color: '#FEC204' },
@@ -1035,6 +1193,7 @@ export default function App() {
                            ))}
                         </div>
                      </div>
+
                   </motion.div>
                 )}
 
@@ -1334,6 +1493,81 @@ export default function App() {
                            ))}
                         </div>
                      </div>
+                  </motion.div>
+                )}
+
+                {/* --- CHATS TAB --- */}
+                {adminTab === 'chats' && (
+                  <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="space-y-4">
+                     {!selectedChatUser ? (
+                        <>
+                           <div className="flex items-center gap-3 mb-6">
+                              <button onClick={() => setAdminTab('dashboard')} className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">
+                                  <ChevronLeft size={20} className="text-white" />
+                              </button>
+                              <h2 className="text-xl font-black text-white">Suhbatlar</h2>
+                           </div>
+                           <div className="space-y-3">
+                              {Array.from(new Set(messages.map(m => m.userId))).filter(u => u !== '@admin').map((user, idx) => (
+                                 <button key={idx} onClick={() => setSelectedChatUser(user)} className="w-full bg-[#111111] p-4 rounded-3xl border border-white/5 flex items-center justify-between group hover:border-[#FEC204]/30 transition-all text-left">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center font-black text-[#FEC204] text-lg uppercase">
+                                            {user.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <div className="font-bold text-white text-base">@{user}</div>
+                                            <div className="text-xs text-white/40 mt-0.5">Xabarlarni ko'rish</div>
+                                        </div>
+                                    </div>
+                                    <ChevronRight size={20} className="text-white/20 group-hover:text-[#FEC204] group-hover:translate-x-1 transition-all" />
+                                 </button>
+                              ))}
+                              {Array.from(new Set(messages.map(m => m.userId))).filter(u => u !== '@admin').length === 0 && (
+                                 <div className="text-center text-white/40 py-10">Suhbatlar yo'q</div>
+                              )}
+                           </div>
+                        </>
+                     ) : (
+                        <div className="flex flex-col h-[calc(100vh-200px)]">
+                           <div className="flex items-center gap-3 pb-4 border-b border-white/5 mb-4 shrink-0">
+                              <button onClick={() => setSelectedChatUser(null)} className="w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">
+                                  <ChevronLeft size={20} className="text-white" />
+                              </button>
+                              <h2 className="text-xl font-black text-white">@{selectedChatUser}</h2>
+                           </div>
+                           <div ref={chatContainerRef} className="flex-1 overflow-y-auto flex flex-col gap-4 mb-4 hide-scroll">
+                              {messages.filter(m => m.userId === selectedChatUser).map((msg, i) => (
+                                 <div key={i} className={`max-w-[80%] p-4 rounded-2xl ${msg.isAdmin ? 'bg-[#FEC204] text-[#0A0A0A] self-end rounded-tr-none shadow-lg' : 'bg-[#1A1A1A] text-white self-start rounded-tl-none border border-white/5 shadow-lg'}`}>
+                                     <p className="font-medium text-[15px] leading-relaxed">{msg.text}</p>
+                                     <div className={`text-[11px] mt-2 flex items-center gap-1 ${msg.isAdmin ? 'justify-end text-[#0A0A0A]/70' : 'justify-start text-white/40'}`}>
+                                        {!msg.isAdmin ? (
+                                           <>
+                                              <span>{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                           </>
+                                        ) : (
+                                           <>
+                                              <span>{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                              <div className="flex items-center ml-1">
+                                                 {msg.is_read ? (
+                                                    <><CheckCheck size={14} className="text-[#0A0A0A]/70"/> <span className="ml-0.5 font-semibold">Ko'rildi</span></>
+                                                 ) : (
+                                                    <><Check size={14} className="text-[#0A0A0A]/50"/> <span className="ml-0.5 font-semibold">Yuborildi</span></>
+                                                 )}
+                                              </div>
+                                           </>
+                                        )}
+                                     </div>
+                                 </div>
+                              ))}
+                           </div>
+                           <div className="flex items-center gap-2 mt-auto shrink-0">
+                              <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} placeholder="Javob yozish..." className="flex-1 bg-[#111111] border border-white/10 rounded-2xl px-4 py-4 text-white focus:border-[#FEC204] focus:ring-1 focus:ring-[#FEC204]/50 outline-none transition-all" />
+                              <button onClick={handleSendMessage} className="w-14 h-14 bg-[#FEC204] text-[#0A0A0A] rounded-2xl flex items-center justify-center hover:scale-105 transition-transform shrink-0">
+                                 <Navigation2 size={24} className="rotate-90 ml-1" />
+                              </button>
+                           </div>
+                        </div>
+                     )}
                   </motion.div>
                 )}
 

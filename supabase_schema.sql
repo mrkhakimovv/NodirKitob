@@ -78,3 +78,24 @@ CREATE POLICY "Users can create their own orders."
 CREATE POLICY "Admins can update orders." 
   ON public.orders FOR UPDATE USING (true);
 
+
+-- 4. Messages Table (Store user-admin chat)
+CREATE TABLE IF NOT EXISTS public.messages (
+  id uuid default uuid_generate_v4() primary key,
+  "userId" text not null,
+  "isAdmin" boolean default false not null,
+  text text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  is_read boolean default false not null
+);
+
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Messages viewable by everyone." 
+  ON public.messages FOR SELECT USING (true);
+
+CREATE POLICY "Anyone can create messages." 
+  ON public.messages FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Anyone can update messages."
+  ON public.messages FOR UPDATE USING (true);

@@ -16,6 +16,15 @@ export interface CartItem extends Book {
   quantity: number;
 }
 
+export interface Message {
+  id: string;
+  userId: string;
+  isAdmin: boolean;
+  text: string;
+  created_at: string;
+  is_read?: boolean;
+}
+
 export interface Order {
   id: string;
   userId: string;
